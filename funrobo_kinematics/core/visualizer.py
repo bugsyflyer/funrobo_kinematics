@@ -677,6 +677,10 @@ class RobotSim:
         _, Hlist = self.model.calc_forward_kinematics(new_joint_values)
         self.model.calc_robot_points(new_joint_values, Hlist)
         self.plot_3D()
+
+    
+    def reset_ee_trajectory(self):
+        self.theta_traj = []
         
 
     def draw_line_3D(self, p1: List[float], p2: List[float], format_type: str = "k-") -> None:
