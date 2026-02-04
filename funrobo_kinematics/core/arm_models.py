@@ -465,3 +465,107 @@ class FiveDOFRobotTemplate(BaseRobot):
 
         # Calculate the EE axes in space (in the base frame)
         self.EE_axes = np.array([self.H_ee[:3, i] * 0.075 + self.points[-1][:3] for i in range(3)])
+
+
+class KinovaRobotTemplate(BaseRobot):
+    """
+    Template model of the 6-DOF Kinova robot arm.
+
+    Attributes:
+        l1, l2, l3, l4, l5, l6 (float): Link lengths (meters).
+        joint_values (list[float]): Current joint angles (radians).
+        joint_limits (list[list[float]]): Joint angle limits (radians).
+        joint_vel_limits (list[list[float]]): Joint velocity limits (rad/s).
+        ee (EndEffector): End-effector pose container.
+        num_dof (int): Number of degrees of freedom (5).
+        points (list[np.ndarray | None]): Joint positions (base + joints + EE).
+        EE_axes (np.ndarray | None): End-effector axis endpoints for visualization.
+        H_ee (np.ndarray | None): Cumulative end-effector transform (base -> EE).
+    """
+
+    
+    def __init__(self) -> None:
+        """
+        Initialize the 6-DOF robot model with default geometry and joint limits.
+        """
+        super().__init__()
+
+        # Link lengths
+        self.l1, self.l2, self.l3, self.l4, self.l5, self.l6, self.l7 = 0.156, 0.128, 0.410, 0.208, 0.105, 0.105, 0.0615
+        
+        self.joint_values = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        # Joint limits (in radians)
+        self.joint_limits = [
+            [-2 * np.pi, 2 * np.pi],
+            [-0.71 * np.pi, 0.71 * np.pi],
+            [-0.82 * np.pi, 0.82 * np.pi],
+            [-2 * np.pi, 2 * np.pi],
+            [-0.66 * np.pi, 0.66 * np.pi],
+            [-2 * np.pi, 2 * np.pi],
+        ]
+
+        self.joint_vel_limits = [
+            [-np.pi * 2, np.pi * 2],
+            [-np.pi * 2, np.pi * 2],
+            [-np.pi * 2, np.pi * 2],
+            [-np.pi * 2, np.pi * 2],
+            [-np.pi * 2, np.pi * 2],
+        ]
+        
+        self.ee = ut.EndEffector()
+        self.num_dof = 6
+        self.points = [None] * (self.num_dof + 2)
+
+
+    def calc_robot_points(
+            self, joint_values: List[float], Hlist: List[np.ndarray], radians: bool = True
+    ) -> None:
+        """ 
+        Compute joint and end-effector positions for visualization.
+
+        This method chains a set of **individual link transforms** to compute cumulative
+        transforms and determine the positions of all joints and the end effector in the
+        base frame.
+
+        Args:
+            joint_values (list[float]): Joint angles. Units depend on `radians`.
+            Hlist (np.ndarray | None): Array of individual 4x4 transforms with shape (num_dof, 4, 4).
+                If None, zero matrices are used.
+            radians (bool, optional): If False, joint angles are assumed to be degrees and will be
+                converted to radians. Defaults to True.
+
+        Returns:
+            None: This method updates internal state. 
+        """
+
+        if not radians: # Convert degrees to radians if the input is in degrees
+            joint_values = [np.deg2rad(theta) for theta in joint_values]
+
+        self.joint_values = joint_values.copy()
+
+        # Initialize points[0] to the base (origin)
+        self.points[0] = np.array([0, 0, 0, 1])
+
+        # Precompute cumulative transformations to avoid redundant calculations
+        H_cumulative = [np.eye(4)]
+        for H in Hlist:
+            H_cumulative.append(H_cumulative[-1] @ H)
+
+        # Calculate the robot points by applying the cumulative transformations
+        for i in range(1, len(self.points)):
+            self.points[i] = H_cumulative[i] @ self.points[0]
+
+        # Calculate EE position and rotation
+        self.EE_axes = H_cumulative[-1] @ np.array([0.075, 0.075, 0.075, 1])  # End-effector axes
+        self.H_ee = H_cumulative[-1]  # Final transformation matrix for EE
+
+        # Set the end effector (EE) position
+        self.ee.x, self.ee.y, self.ee.z = self.points[-1][:3]
+        
+        # Extract and assign the RPY (roll, pitch, yaw) from the rotation matrix
+        rpy = ut.rotm_to_euler(self.H_ee[:3, :3])
+        self.ee.rotx, self.ee.roty, self.ee.rotz = rpy[0], rpy[1], rpy[2]
+
+        # Calculate the EE axes in space (in the base frame)
+        self.EE_axes = np.array([self.H_ee[:3, i] * 0.075 + self.points[-1][:3] for i in range(3)])
