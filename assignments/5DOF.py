@@ -31,10 +31,10 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         
         # DH parameters for each joint
         DH = np.zeros((self.num_dof, 4))
-        DH[0] = [curr_joint_values[0], self.l1, 0, pi/2]
-        DH[1] = [curr_joint_values[1], 0, self.l2, 0]
-        DH[2] = [curr_joint_values[2], 0, self.l3, 0]
-        DH[3] = [curr_joint_values[3], 0, 0, -pi/2]
+        DH[0] = [curr_joint_values[0], self.l1, 0, -pi/2]
+        DH[1] = [curr_joint_values[1] - pi/2, 0, self.l2, pi]
+        DH[2] = [curr_joint_values[2], 0, self.l3, pi]
+        DH[3] = [curr_joint_values[3] + pi/2, 0, 0, pi/2]
         DH[4] = [curr_joint_values[4], self.l4 + self.l5, 0, 0]
 
         # Compute the transformation matrices
