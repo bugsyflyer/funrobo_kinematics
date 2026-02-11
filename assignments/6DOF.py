@@ -30,13 +30,14 @@ class Kinova(KinovaRobotTemplate):
             curr_joint_values[i] = np.clip(theta, self.joint_limits[i][0], self.joint_limits[i][1])
         
         # DH parameters for each joint
-        DH = np.zeros((self.num_dof, 4))
-        DH[0] = [curr_joint_values[0], self.l1 + self.l2, 0, -pi/2]
-        DH[1] = [curr_joint_values[1], 0, self.l3, 0]
-        DH[2] = [curr_joint_values[2], 0, 0, pi/2]
-        DH[3] = [curr_joint_values[3], self.l4 + self.l5, 0, -pi/2]
-        DH[4] = [curr_joint_values[4], 0, 0, pi/2]
-        DH[5] = [curr_joint_values[5], self.l6 + self.l7, 0, 0]
+        DH = np.zeros((self.num_dof + 1, 4))
+        DH[0] = [0, 0, 0, pi]
+        DH[1] = [curr_joint_values[0], -self.l1 - self.l2, 0, pi/2]
+        DH[2] = [curr_joint_values[1] - pi/2, 0, self.l3, pi]
+        DH[3] = [curr_joint_values[2] - pi/2, 0, 0, pi/2]
+        DH[4] = [curr_joint_values[3], -self.l4 - self.l5, 0, -pi/2]
+        DH[5] = [curr_joint_values[4], 0, 0, pi/2]
+        DH[6] = [curr_joint_values[5], -self.l6 - self.l7, 0, pi]
         
 
         # Compute the transformation matrices
