@@ -68,13 +68,11 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         Returns:
             np.ndarray: The Jacobian matrix (2x2).
         """
+        [ee, Hlist] = self.calc_forward_kinematics(joint_values)
         
-        return np.array([
-            [-self.l1 * sin(joint_values[0]) - self.l2 * sin(joint_values[0] + joint_values[1]), 
-             -self.l2 * sin(joint_values[0] + joint_values[1])],
-            [self.l1 * cos(joint_values[0]) + self.l2 * cos(joint_values[0] + joint_values[1]), 
-             self.l2 * cos(joint_values[0] + joint_values[1])]
-        ])
+        k = [0,0,1].T
+        
+        
         
     def inverse_jacobian(self, joint_values: list):
         """
