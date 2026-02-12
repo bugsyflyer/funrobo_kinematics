@@ -56,7 +56,31 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         rpy = ut.rotm_to_euler(H_ee[:3, :3])
         ee.rotx, ee.roty, ee.rotz = rpy[0], rpy[1], rpy[2]
 
+        print(Hlist)
         return ee, Hlist
+
+    def jacobian(self, joint_values: list):
+        """
+        Returns the Jacobian matrix for the robot. 
+
+        Args:
+            joint_values (list): The joint angles for the robot.
+
+        Returns:
+            np.ndarray: The Jacobian matrix.
+        """
+        
+        k = [0,0,1].T
+    
+
+    def inverse_jacobian(self, joint_values: list):
+        """
+        Returns the inverse of the Jacobian matrix.
+
+        Returns:
+            np.ndarray: The inverse Jacobian matrix.
+        """
+        return np.linalg.pinv(self.jacobian(joint_values))
     
     def calc_velocity_kinematics(self, joint_values: list, vel: list, dt=0.02):
         """
@@ -91,31 +115,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                             )
         
         return new_joint_values
-
-
-    def jacobian(self, joint_values: list):
-        """
-        Returns the Jacobian matrix for the robot. 
-
-        Args:
-            joint_values (list): The joint angles for the robot.
-
-        Returns:
-            np.ndarray: The Jacobian matrix.
-        """
-        
-        k = [0,0,1].T
-        
-    
-
-    def inverse_jacobian(self, joint_values: list):
-        """
-        Returns the inverse of the Jacobian matrix.
-
-        Returns:
-            np.ndarray: The inverse Jacobian matrix.
-        """
-        return np.linalg.pinv(self.jacobian(joint_values))
     
 
 
@@ -123,4 +122,4 @@ if __name__ == "__main__":
     model = FiveDOFRobot()
     robot = RobotSim(robot_model=model)
     viz = Visualizer(robot=robot)
-    viz.run()
+    #viz.run()
