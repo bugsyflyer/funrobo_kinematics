@@ -68,9 +68,31 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         Returns:
             np.ndarray: The Jacobian matrix (2x2).
         """
-        [ee, Hlist] = self.calc_forward_kinematics(joint_values)
         
-        k = [0,0,1].T
+        [ee, Hlist] = self.calc_forward_kinematics(joint_values)
+        zero_d_ee = [ee.x, ee.y, ee.z]
+        k = np.array([0,0,1]).T
+        
+        #recalc cumulative
+        H_cumulative = [np.eye(4)]
+        for i in range(self.num_dof):
+            H_cumulative.append(H_cumulative[-1] @ Hlist[i])
+        
+        #jacobian
+        J = np.zeros((3, self.num_dof))
+        
+        for i in range(self.num_dof):
+            H_i = H_cumulative[i]
+            z_i = H_i[:3, :3]@k
+            print(z_i)
+            r_i = zero_d_ee - H_i[:3, 3]
+            print(r_i)
+            
+            Jv_i = np.cross(z_i, r_i)
+            #Jw_i = z_i
+            
+            J[:, i] = Jv_i
+        return J
         
         
         
@@ -97,7 +119,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
             new_joint_values = [theta + np.random.rand()*0.02 for theta in new_joint_values]
         
         # Calculate joint velocities using the inverse Jacobian
-        vel = vel[:2]  # Consider only the first two components of the velocity
         joint_vel = self.inverse_jacobian(new_joint_values) @ vel
         
         joint_vel = np.clip(joint_vel, 
@@ -110,7 +131,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
             new_joint_values[i] += dt * joint_vel[i]
 
         # Ensure joint angles stay within limits
-        new_joint_values = np.clip(new_joint_values, 
+        enw_joint_values = np.clip(new_joint_values, 
                                [limit[0] for limit in self.joint_limits], 
                                [limit[1] for limit in self.joint_limits]
                             )
