@@ -1,7 +1,6 @@
 from math import *
 import numpy as np
 import funrobo_kinematics.core.utils as ut
-# from funrobo_kinematics.core.visualizer import Visualizer, RobotSim
 from funrobo_kinematics.core.arm_models import (
     TwoDOFRobotTemplate, ScaraRobotTemplate, FiveDOFRobotTemplate
 )
@@ -11,7 +10,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
     def __init__(self):
         super().__init__()
 
-    
     def calc_forward_kinematics(self, joint_values: list, radians=True):
         """
         Calculate Forward Kinematics (FK) based on the given joint angles.
@@ -26,13 +24,16 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
             curr_joint_values = [np.deg2rad(theta) for theta in curr_joint_values]
 
         # Ensure that the joint angles respect the joint limits
-        for i, theta in enumerate(curr_joint_values):
+        for i in range(4):
+            theta = curr_joint_values[i]
             curr_joint_values[i] = np.clip(theta, self.joint_limits[i][0], self.joint_limits[i][1])
+
         
         # DH parameters for each joint
+
         DH = np.zeros((self.num_dof, 4))
-        DH[0] = [curr_joint_values[0], self.l1, 0, -pi/2]
-        DH[1] = [curr_joint_values[1] - pi/2, 0, self.l2, pi]
+        DH[0] = [curr_joint_values[0] + pi, self.l1, 0, -pi/2]
+        DH[1] = [curr_joint_values[1] + pi, 0, self.l2, pi]
         DH[2] = [curr_joint_values[2], 0, self.l3, pi]
         DH[3] = [curr_joint_values[3] + pi/2, 0, 0, pi/2]
         DH[4] = [curr_joint_values[4], self.l4 + self.l5, 0, 0]
@@ -57,57 +58,8 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         ee.rotx, ee.roty, ee.rotz = rpy[0], rpy[1], rpy[2]
 
         return ee, Hlist
-    
-    def jacobian(self, joint_values: list):
-        """
-        Returns the Jacobian matrix for the robot. 
 
-        Args:
-            joint_values (list): The joint angles for the robot.
 
-        Returns:
-            np.ndarray: The Jacobian matrix (2x2).
-        """
-        
-        [ee, Hlist] = self.calc_forward_kinematics(joint_values, radians = False)
-        zero_d_ee = [ee.x, ee.y, ee.z]
-        k = np.array([0,0,1]).T
-        
-        #recalc cumulative
-        H_cumulative = [np.eye(4)]
-        for i in range(self.num_dof):
-            H_cumulative.append(H_cumulative[-1] @ Hlist[i])
-        
-        #jacobian
-        J = np.zeros((3, self.num_dof))
-        
-        for i in range(self.num_dof):
-            H_i = H_cumulative[i]
-            z_i = H_i[:3, :3]@k
-            #print(z_i)
-            r_i = zero_d_ee - H_i[:3, 3]
-            #print(r_i)
-            
-            Jv_i = np.cross(z_i, r_i)
-            #Jw_i = z_i
-            
-            J[:, i] = Jv_i
-        return J
-        
-        
-        
-    def inverse_jacobian(self, joint_values: list):
-        """
-        Returns the inverse of the Jacobian matrix.
-
-        Returns:
-            np.ndarray: The inverse Jacobian matrix.
-        """
-        lam = 0.05  # damping factor
-        J_pinv = J.T @ np.linalg.inv(J @ J.T + lam**2 * np.eye(3))
-        q_dot = J_pinv @ vel
-        return np.linalg.pinv(self.jacobian(joint_values))
-    
     def calc_velocity_kinematics(self, joint_values: list, vel: list, dt=0.02):
         """
         Calculates the velocity kinematics for the robot based on the given velocity input.
@@ -116,14 +68,13 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
             vel (list): The velocity vector for the end effector [vx, vy].
         """
         new_joint_values = joint_values.copy()
-        new_joint_values = new_joint_values[0:5]
-        #print(new_joint_values)
 
         # move robot slightly out of zeros singularity
         if all(theta == 0.0 for theta in new_joint_values):
             new_joint_values = [theta + np.random.rand()*0.02 for theta in new_joint_values]
         
         # Calculate joint velocities using the inverse Jacobian
+        vel = vel[:3]  # Consider only the first two components of the velocity
         joint_vel = self.inverse_jacobian(new_joint_values) @ vel
         
         joint_vel = np.clip(joint_vel, 
@@ -140,13 +91,57 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                                [limit[0] for limit in self.joint_limits], 
                                [limit[1] for limit in self.joint_limits]
                             )
-        new_joint_values.append(0)
-        new_joint_values = [np.rad2deg(theta) for theta in new_joint_values]
+        
         return new_joint_values
+
+
     
+
+    def jacobian(self, joint_values: list):
+        """
+        Calculates the 6xN Jacobian matrix for any number of joints.
+        
+        H_cumulative: List of (N+1) matrices [H0_0, H0_1, ..., H0_n]
+        joint_types: List of strings ['R', 'R', 'P', ...] where R=Revolute, P=Prismatic.
+                    If None, assumes all are Revolute.
+        """
+        _, h_list = self.calc_forward_kinematics(joint_values)
+
+        H_cumulative = [np.eye(4)]
+        for h in h_list:
+            H_cumulative.append(H_cumulative[-1] @ h)
+        num_joints = len(h_list)
+            
+        d_n = H_cumulative[-1][:3, 3] # end-effector position
+        jacobian = np.zeros((6, num_joints))
+        
+        for i in range(num_joints):
+            H_prev = H_cumulative[i]
+            z_prev = H_prev[:3, 2] # The z-axis of the previous frame
+            d_prev = H_prev[:3, 3] # The origin of the previous frame
+            
+            jv = np.cross(z_prev, (d_n - d_prev))
+            jw = z_prev
+
+            jacobian[:3,i] = jv # linear velocity
+            jacobian[3:,i] = jw # angular velocity
+
+        return jacobian[:3,:] 
+
+    
+
+    def inverse_jacobian(self, joint_values: list):
+        """
+        Returns the inverse of the Jacobian matrix.
+
+        Returns:
+            np.ndarray: The inverse Jacobian matrix.
+        """
+        return np.linalg.pinv(self.jacobian(joint_values))
 
 
 if __name__ == "__main__":
+    from funrobo_kinematics.core.visualizer import Visualizer, RobotSim
     model = FiveDOFRobot()
     robot = RobotSim(robot_model=model)
     viz = Visualizer(robot=robot)
