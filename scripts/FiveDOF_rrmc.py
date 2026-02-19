@@ -103,9 +103,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         Returns:
             np.ndarray: The inverse Jacobian matrix.
         """
-        lam = 0.05  # damping factor
-        J_pinv = J.T @ np.linalg.inv(J @ J.T + lam**2 * np.eye(3))
-        q_dot = J_pinv @ vel
         return np.linalg.pinv(self.jacobian(joint_values))
     
     def calc_velocity_kinematics(self, joint_values: list, vel: list, dt=0.02):

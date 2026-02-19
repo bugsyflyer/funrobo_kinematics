@@ -67,7 +67,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         Args:
             vel (list): The velocity vector for the end effector [vx, vy].
         """
-        new_joint_values = joint_values.copy()
+        new_joint_values = list(joint_values[:self.num_dof])
 
         # move robot slightly out of zeros singularity
         if all(theta == 0.0 for theta in new_joint_values):
