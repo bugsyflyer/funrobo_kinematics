@@ -44,6 +44,22 @@ class TwoDOFRobot(TwoDOFRobotTemplate):
         ee.rotx, ee.roty, ee.rotz = rpy[0], rpy[1], rpy[2]
 
         return ee, Hlist
+    
+    def calc_inverse_kinematics(self, ee):
+        x = ee.x
+        y = ee.y
+        z = ee.z
+        l1, l2 = self.l1, self.l2
+        L = sqrt(x*x + y*y)
+        
+        #theta 2
+        beta = acos((l1*l1 + l2*l2 - L*L)/2*l1*l2)
+        theta2_plus = pi - beta
+        theta2_minus = -pi + beta
+        
+        #alpha
+        alpha_plus = atan(l2*sin(theta2_plus), )
+        pass
 
 
 if __name__ == "__main__":
