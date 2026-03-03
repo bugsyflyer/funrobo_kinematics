@@ -1,40 +1,39 @@
-from math import *
+import math
 import numpy as np
 import funrobo_kinematics.core.utils as ut
-# from funrobo_kinematics.core.visualizer import Visualizer, RobotSim
-from funrobo_kinematics.core.arm_models import (
-    TwoDOFRobotTemplate, ScaraRobotTemplate, FiveDOFRobotTemplate
-)
+from funrobo_kinematics.core.visualizer import Visualizer, RobotSim
+from funrobo_kinematics.core.arm_models import FiveDOFRobotTemplate
+
 
 
 class FiveDOFRobot(FiveDOFRobotTemplate):
     def __init__(self):
         super().__init__()
-
     
+
     def calc_forward_kinematics(self, joint_values: list, radians=True):
         """
-        Calculate Forward Kinematics (FK) based on the given joint angles.
-
+        Calculate forward kinematics based on the provided joint angles.
+        
         Args:
-            joint_values (list): Joint angles (in radians if radians=True, otherwise in degrees).
-            radians (bool): Whether the input angles are in radians (default is False).
+            theta: List of joint angles (in degrees or radians).
+            radians: Boolean flag to indicate if input angles are in radians.
         """
         curr_joint_values = joint_values.copy()
-
+        
         if not radians: # Convert degrees to radians if the input is in degrees
             curr_joint_values = [np.deg2rad(theta) for theta in curr_joint_values]
-
+        
         # Ensure that the joint angles respect the joint limits
         for i, theta in enumerate(curr_joint_values):
             curr_joint_values[i] = np.clip(theta, self.joint_limits[i][0], self.joint_limits[i][1])
-        
-        # DH parameters for each joint
-        DH = np.zeros((self.num_dof, 4))
-        DH[0] = [curr_joint_values[0], self.l1, 0, -pi/2]
-        DH[1] = [curr_joint_values[1] - pi/2, 0, self.l2, pi]
-        DH[2] = [curr_joint_values[2], 0, self.l3, pi]
-        DH[3] = [curr_joint_values[3] + pi/2, 0, 0, pi/2]
+
+        # Set the Denavit-Hartenberg parameters for each joint
+        DH = np.zeros((self.num_dof, 4)) # [theta, d, a, alpha]
+        DH[0] = [curr_joint_values[0], self.l1, 0, -np.pi/2]
+        DH[1] = [curr_joint_values[1] - np.pi/2, 0, self.l2, np.pi]
+        DH[2] = [curr_joint_values[2], 0, self.l3, np.pi]
+        DH[3] = [curr_joint_values[3] + np.pi/2, 0, 0, np.pi/2]
         DH[4] = [curr_joint_values[4], self.l4 + self.l5, 0, 0]
 
         # Compute the transformation matrices
@@ -58,71 +57,24 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
 
         return ee, Hlist
     
-    def jacobian(self, joint_values: list):
-        """
-        Returns the Jacobian matrix for the robot. 
 
-        Args:
-            joint_values (list): The joint angles for the robot.
-
-        Returns:
-            np.ndarray: The Jacobian matrix (2x2).
-        """
-        
-        [ee, Hlist] = self.calc_forward_kinematics(joint_values, radians = False)
-        zero_d_ee = [ee.x, ee.y, ee.z]
-        k = np.array([0,0,1]).T
-        
-        #recalc cumulative
-        H_cumulative = [np.eye(4)]
-        for i in range(self.num_dof):
-            H_cumulative.append(H_cumulative[-1] @ Hlist[i])
-        
-        #jacobian
-        J = np.zeros((3, self.num_dof))
-        
-        for i in range(self.num_dof):
-            H_i = H_cumulative[i]
-            z_i = H_i[:3, :3]@k
-            #print(z_i)
-            r_i = zero_d_ee - H_i[:3, 3]
-            #print(r_i)
-            
-            Jv_i = np.cross(z_i, r_i)
-            #Jw_i = z_i
-            
-            J[:, i] = Jv_i
-        return J
-        
-        
-        
-    def inverse_jacobian(self, joint_values: list):
-        """
-        Returns the inverse of the Jacobian matrix.
-
-        Returns:
-            np.ndarray: The inverse Jacobian matrix.
-        """
-        return np.linalg.pinv(self.jacobian(joint_values))
-    
     def calc_velocity_kinematics(self, joint_values: list, vel: list, dt=0.02):
         """
         Calculates the velocity kinematics for the robot based on the given velocity input.
 
         Args:
-            vel (list): The velocity vector for the end effector [vx, vy].
+            vel (list): The velocity vector for the end effector [vx, vy, vz].
         """
         new_joint_values = joint_values.copy()
-        new_joint_values = new_joint_values[0:5]
-        #print(new_joint_values)
 
         # move robot slightly out of zeros singularity
         if all(theta == 0.0 for theta in new_joint_values):
             new_joint_values = [theta + np.random.rand()*0.02 for theta in new_joint_values]
         
-        # Calculate joint velocities using the inverse Jacobian
-        joint_vel = self.inverse_jacobian(new_joint_values) @ vel
-        
+        # Calculate the joint velocity using the inverse Jacobian
+        # joint_vel = self.inverse_jacobian(new_joint_values, pseudo=True) @ vel
+        joint_vel = self.damped_inverse_jacobian(new_joint_values) @ vel
+
         joint_vel = np.clip(joint_vel, 
                             [limit[0] for limit in self.joint_vel_limits], 
                             [limit[1] for limit in self.joint_vel_limits]
@@ -137,14 +89,167 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                                [limit[0] for limit in self.joint_limits], 
                                [limit[1] for limit in self.joint_limits]
                             )
-        new_joint_values.append(0)
-        new_joint_values = [np.rad2deg(theta) for theta in new_joint_values]
+        
         return new_joint_values
     
 
+    def jacobian3x5(self, joint_values: list):
+        """
+        Compute the Jacobian matrix for the current robot configuration.
+
+        Args:
+            joint_values (list): The joint angles for the robot.
+
+        Returns:
+            Jacobian matrix (3x5).
+        """
+        _, Hlist = self.calc_forward_kinematics(joint_values)
+
+        # Precompute transformation matrices for efficiency
+        H_cumulative = [np.eye(4)]
+        for i in range(self.num_dof):
+            H_cumulative.append(H_cumulative[-1] @ Hlist[i])
+
+        # Define O0 for calculations
+        O0 = np.array([0, 0, 0, 1])
+        
+        # Initialize the Jacobian matrix
+        jacobian = np.zeros((3, self.num_dof))
+
+        # Calculate the Jacobian columns
+        for i in range(self.num_dof):
+            H_curr = H_cumulative[i]
+            H_final = H_cumulative[-1]
+            
+            # Calculate position vector r
+            r = (H_final @ O0 - H_curr @ O0)[:3]
+
+            # Compute the rotation axis z
+            z = H_curr[:3, :3] @ np.array([0, 0, 1])
+
+            # Compute linear velocity part of the Jacobian
+            jacobian[:, i] = np.cross(z, r)
+
+        # Replace near-zero values with zero, primarily for debugging purposes
+        return ut.near_zero(jacobian)
+    
+
+    def jacobian6x5(self, joint_values: list = None):
+        """
+        Compute the Jacobian matrix for the current robot configuration.
+
+        Args:
+            theta (list, optional): The joint angles for the robot. Defaults to self.theta.
+        
+        Returns:
+            Jacobian matrix (6x5).
+        """
+        _, Hlist = self.calc_forward_kinematics(joint_values)
+
+        # Precompute transformation matrices for efficiency
+        H_cumulative = [np.eye(4)]
+        for i in range(self.num_dof):
+            H_cumulative.append(H_cumulative[-1] @ Hlist[i])
+
+        # Define O0 for calculations
+        O0 = np.array([0, 0, 0, 1])
+        
+        # Initialize the Jacobian matrix
+        jacobian = np.zeros((6, self.num_dof))
+
+        # Calculate the Jacobian columns
+        for i in range(self.num_dof):
+            H_curr = H_cumulative[i]
+            H_final = H_cumulative[-1]
+            
+            # Calculate position vector r
+            r = (H_final @ O0 - H_curr @ O0)[:3]
+
+            # Compute the rotation axis z
+            z = H_curr[:3, :3] @ np.array([0, 0, 1])
+
+            # Compute linear velocity part of the Jacobian
+            jacobian[:3, i] = np.cross(z, r)
+
+            # Compute angular velocity part of the Jacobian
+            jacobian[3:, i] = z
+
+        # Replace near-zero values with zero, primarily for debugging purposes
+        return ut.near_zero(jacobian)
+  
+
+    def inverse_jacobian(self, joint_values: list, pseudo=False):
+        """
+        Compute the inverse of the Jacobian matrix using either pseudo-inverse or regular inverse.
+        
+        Args:
+            pseudo: Boolean flag to use pseudo-inverse (default is False).
+        
+        Returns:
+            The inverse (or pseudo-inverse) of the Jacobian matrix.
+        """
+
+        J = self.jacobian3x5(joint_values)
+        JT = np.transpose(J)
+        manipulability_idx = np.sqrt(np.linalg.det(J @ JT))
+        # print(f'Manipulability index is: {manipulability_idx:.03f}')
+
+        # ev = np.linalg.eigvals(JJT)
+        # print(ev)
+
+        if pseudo:
+            return np.linalg.pinv(self.jacobian3x5(joint_values))
+        else:
+            return np.linalg.inv(self.jacobian3x5(joint_values))
+        
+        
+    def damped_inverse_jacobian(self, joint_values: list, damping_factor=0.025):
+        
+        J = self.jacobian3x5(joint_values)
+        # print(f'jacobian3x5: \n {self.jacobian3x5(q)}')
+        JT = np.transpose(J)
+        I = np.eye(3)
+        return JT @ np.linalg.inv(J @ JT + (damping_factor**2)*I)
+    
+    def calc_numerical_ik(
+        self,
+        ee,
+        init_joint_values,
+        tol: float = 1e-3,
+        ilimit: int = 200):
+
+        joint_values = np.array(init_joint_values, dtype=float)
+
+        alpha = 0.3          # smaller step
+
+        for _ in range(ilimit):
+
+            ee_guess, _ = self.calc_forward_kinematics(joint_values)
+
+            error = np.array([
+                ee.x - ee_guess.x,
+                ee.y - ee_guess.y,
+                ee.z - ee_guess.z,
+            ])
+
+            # convergence check
+            if np.linalg.norm(error) < tol:
+                return joint_values
+
+            #damped inv jacobian
+            J = self.damped_inverse_jacobian(joint_values)
+
+            dq = alpha * (J @ error)
+
+            joint_values = joint_values + dq
+
+        return joint_values
+
 
 if __name__ == "__main__":
+    
     model = FiveDOFRobot()
+    
     robot = RobotSim(robot_model=model)
     viz = Visualizer(robot=robot)
     viz.run()

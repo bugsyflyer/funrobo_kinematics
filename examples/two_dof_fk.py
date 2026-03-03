@@ -46,20 +46,111 @@ class TwoDOFRobot(TwoDOFRobotTemplate):
         return ee, Hlist
     
     def calc_inverse_kinematics(self, ee):
-        x = ee.x
-        y = ee.y
-        z = ee.z
+
+        x, y = ee.x, ee.y
         l1, l2 = self.l1, self.l2
-        L = sqrt(x*x + y*y)
+
+        r2 = x**2 + y**2
+
+        #theta2
+        c2 = (r2 - l1**2 - l2**2) / (2 * l1 * l2)
+
+        #safety stuff
+        c2 = np.clip(c2, -1.0, 1.0)
+
+        s2 = sqrt(1 - c2**2)
+
+        theta2_plus = atan2(s2, c2)     # elbow up
+        theta2_minus = atan2(-s2, c2)   # elbow down
+
+        #theta1
+        def solve_theta1(theta2):
+            return atan2(y, x) - atan2(
+                l2*sin(theta2),
+                l1 + l2*cos(theta2)
+            )
+
+        theta1_plus = solve_theta1(theta2_plus)
+        theta1_minus = solve_theta1(theta2_minus)
+
+        return [
+            [theta1_plus, theta2_plus],
+            [theta1_minus, theta2_minus]
+        ]
+    
+    def calc_numerical_ik(
+        self,
+        ee,
+        init_joint_values,
+        tol: float = 1e-3,
+        ilimit: int = 200):
+
+        joint_values = np.array(init_joint_values, dtype=float)
+
+        alpha = 0.3          # smaller step
+        damping = 0.05       # DLS stability
+
+        for _ in range(ilimit):
+
+            ee_guess, _ = self.calc_forward_kinematics(joint_values)
+
+            error = np.array([
+                ee.x - ee_guess.x,
+                ee.y - ee_guess.y
+            ])
+
+            # convergence check
+            if np.linalg.norm(error) < tol:
+                return joint_values
+
+            #damped inv jacobian
+            J = self.jacobian(joint_values)
+            JT = J.T
+
+            J_damped = JT @ np.linalg.inv(
+                J @ JT + (damping**2) * np.eye(2)
+            )
+
+            dq = alpha * (J_damped @ error)
+
+            joint_values = joint_values + dq
+
+        return joint_values
         
-        #theta 2
-        beta = acos((l1*l1 + l2*l2 - L*L)/2*l1*l2)
-        theta2_plus = pi - beta
-        theta2_minus = -pi + beta
+    def jacobian(self, joint_values: list):
+        """
+        Returns the Jacobian matrix for the robot. 
+
+        Args:
+            joint_values (list): The joint angles for the robot.
+
+        Returns:
+            np.ndarray: The Jacobian matrix (2x2).
+        """
+        print(f"Joint values: {joint_values}")
         
-        #alpha
-        alpha_plus = atan(l2*sin(theta2_plus), )
-        pass
+        return np.array([
+            [-self.l1 * sin(joint_values[0]) - self.l2 * sin(joint_values[0] + joint_values[1]), 
+             -self.l2 * sin(joint_values[0] + joint_values[1])],
+            [self.l1 * cos(joint_values[0]) + self.l2 * cos(joint_values[0] + joint_values[1]), 
+             self.l2 * cos(joint_values[0] + joint_values[1])]
+        ])
+    
+
+    def inverse_jacobian(self, joint_values: list):
+        """
+        Returns the inverse of the Jacobian matrix.
+
+        Returns:
+            np.ndarray: The inverse Jacobian matrix.
+        """
+        damping= 0.1
+        J = self.jacobian(joint_values)
+
+        JT = J.T
+        lambda2_I = (damping**2) * np.eye(J.shape[0])
+
+        return JT @ np.linalg.inv(J @ JT + lambda2_I)
 
 
 if __name__ == "__main__":
