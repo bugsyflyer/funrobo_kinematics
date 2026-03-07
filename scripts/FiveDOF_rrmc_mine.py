@@ -26,8 +26,8 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
             curr_joint_values = [np.deg2rad(theta) for theta in curr_joint_values]
 
         # Ensure that the joint angles respect the joint limits
-        for i, theta in enumerate(curr_joint_values):
-            curr_joint_values[i] = np.clip(theta, self.joint_limits[i][0], self.joint_limits[i][1])
+        #for i, theta in enumerate(curr_joint_values):
+            #curr_joint_values[i] = np.clip(theta, self.joint_limits[i][0], self.joint_limits[i][1])
         
         # DH parameters for each joint
         DH = np.zeros((self.num_dof, 4))

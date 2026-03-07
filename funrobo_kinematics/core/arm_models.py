@@ -391,11 +391,11 @@ class FiveDOFRobotTemplate(BaseRobot):
         
         # Joint limits (in radians)
         self.joint_limits = [
-            [-2*np.pi / 3, 2*np.pi / 3],
-            [-2*np.pi / 3, 2*np.pi / 3],
-            [-2*np.pi / 3, 2*np.pi / 3],
-            [-2*np.pi / 3, 2*np.pi / 3],
-            [-2*np.pi / 3, 2*np.pi / 3],
+            [-np.pi, np.pi],
+            [-np.pi / 3, np.pi],
+            [-np.pi + np.pi / 12, np.pi - np.pi / 4],
+            [-np.pi + np.pi / 12, np.pi - np.pi / 12],
+            [-np.pi, np.pi],
         ]
 
         self.joint_vel_limits = [
