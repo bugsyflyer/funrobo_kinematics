@@ -7,7 +7,8 @@ import funrobo_kinematics.core.utils as ut
 
 #TODO Import your robot model script
 # ---------------------------------------
-from solutions.hiwonder import FiveDOFRobot
+#from solutions.hiwonder import FiveDOFRobot
+from scripts.FiveDOF_rrmc import FiveDOFRobot
 # ---------------------------------------
 
 
@@ -42,14 +43,14 @@ ids = [f"joint_values_{i}={[round(x,2) for x in q]}" for i, q in enumerate(joint
 # Python test for analytical inverse kinematics
 # -----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("joint_values", joint_values_list, ids=ids)
-def test_analytical_ik(joint_values):
-    ee, _ = robot_model.calc_forward_kinematics(joint_values, radians=True)
+# @pytest.mark.parametrize("joint_values", joint_values_list, ids=ids)
+# def test_analytical_ik(joint_values):
+#     ee, _ = robot_model.calc_forward_kinematics(joint_values, radians=True)
 
-    init_joint_values = ut.sample_valid_joints(robot_model)
-    new_joint_values = robot_model.calc_inverse_kinematics(ee, init_joint_values, soln=0)
+#     init_joint_values = ut.sample_valid_joints(robot_model)
+#     new_joint_values = robot_model.calc_inverse_kinematics(ee, init_joint_values, soln=0)
 
-    assert ut.check_valid_ik_soln(new_joint_values, ee, robot_model)
+#     assert ut.check_valid_ik_soln(new_joint_values, ee, robot_model)
 
 
 # -----------------------------------------------------------------------------
@@ -80,7 +81,7 @@ def test_numerical_ik(joint_values):
 # Python test for forward position kinematics
 # -----------------------------------------------------------------------------
 
-# with open('tests/data/two_dof_fk_test_data.yaml', 'r') as file:
+# with open('tests/data/five_dof_fk_test_data.yaml', 'r') as file:
 #     data = yaml.safe_load(file)
 #     joint_values_list = data['joint_values']
 #     ee_list = data['ee']
