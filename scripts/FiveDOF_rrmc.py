@@ -162,6 +162,9 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
     
     def calc_inverse_kinematics(self, ee, init_joint_values, soln=0):
         #currently does not account for multiple solns
+        p_ee = np.array([ee.x, ee.y, ee.z])
+        r_ee = ut.euler_to_rotm(ee.rotx, ee.roty, ee.rotz)
+        
         d5 = self.l4 + self.l5
         H5 = ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz))
         w_x = ee.x - d5*H5[0,2]
@@ -223,6 +226,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         last_error = 1000
         best_joints_index = 0
         last_best_joints_index = 0
+        print("new loop")
         for i in range(len(possible_joint_values)):
             [ee_guess, _] = self.calc_forward_kinematics(possible_joint_values[i])
             print(f"joint vals: {possible_joint_values[i]}")
@@ -232,7 +236,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                 last_best_joints_index = best_joints_index
                 best_joints_index = i
             last_error = error
-        
+        print(init_joint_values)
         if soln == 0:      
             return possible_joint_values[best_joints_index]
         return possible_joint_values[last_best_joints_index]
@@ -254,7 +258,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                 ])
 
                 #if converged
-                if np.linalg.norm(error) < tol:
+                if np.linalg.norm(error) <= tol:
                     print(f"error: {error}")
                     return joint_values
 
@@ -262,6 +266,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                 J = self.damped_inverse_jacobian(joint_values)
 
                 joint_values = joint_values + (J @ error)
+
 
 
 if __name__ == "__main__":
