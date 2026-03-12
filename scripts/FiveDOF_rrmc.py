@@ -161,111 +161,109 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         return JT @ np.linalg.inv(J @ JT + (damping_factor**2)*I)
     
     def calc_inverse_kinematics(self, ee, init_joint_values, soln=0):
-        #currently does not account for multiple solns
-        p_ee = np.array([ee.x, ee.y, ee.z])
-        r_ee = ut.euler_to_rotm(ee.rotx, ee.roty, ee.rotz)
-        
         d5 = self.l4 + self.l5
-        H5 = ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz))
-        w_x = ee.x - d5*H5[0,2]
-        w_y = ee.y - d5*H5[1,2]
-        w_z = ee.z - d5*H5[2,2]
+        ee_rotation = np.array(ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz)))
+        T_ee = np.eye(4)
+        T_ee[:3, :3] = ee_rotation
+        T_ee[:3,  3] = [ee.x, ee.y, ee.z]
 
-        theta1list = []
-        theta1list.append(math.atan2(ee.y, ee.x)) #forward
-        
-        if math.atan2(ee.y, ee.x) > 0:
-            theta1list.append(math.atan2(ee.y, ee.x) - np.pi)
-        else:
-            theta1list.append(math.atan2(ee.y, ee.x) + np.pi)
-        
-        r = math.sqrt(w_x**2 + w_y**2)
-        s = w_z - self.l1
-        L = math.sqrt(r**2 + s**2)
-        
-        cos_theta_3 = (self.l2**2 + self.l3**2 - L**2)/(2*self.l2*self.l3)
-        cos_theta_3 = np.clip(cos_theta_3, -1.0, 1.0)
-        
-        theta3list = []
-        theta3list.append(np.pi - math.acos(cos_theta_3)) #elbow up
-        theta3list.append(-(np.pi - math.acos(cos_theta_3))) #elbow down
-        
-        #need backward theta 2 to account for backward theta1, so should have 4 sols total
-        theta2list = []
-        # theta2list.append(math.atan2(s,r) - math.atan2(self.l3*math.sin(theta3list[0]), self.l2 + self.l3*math.cos(theta3list[0])))
-        # theta2list.append(math.atan2(s,r) - math.atan2(self.l3*math.sin(theta3list[1]), self.l2 + self.l3*math.cos(theta3list[1])))
-        g1 = self.l3 * math.sin(theta3list[0])
-        b1 = math.asin(g1/L)
-        g2 = self.l3 * math.sin(theta3list[1])
-        b2 = math.asin(g2/L)
-        theta2list.append(-(math.atan2(s,r) - b1 - np.pi/2))
-        theta2list.append((math.atan2(s,r) + b2 - np.pi/2))
-        
+        w_x = ee.x - d5 * ee_rotation[0, 2]
+        w_y = ee.y - d5 * ee_rotation[1, 2]
+        w_z = ee.z - d5 * ee_rotation[2, 2]
+
+        theta1_fwd = math.atan2(w_y, w_x)
+        theta1_bwd = theta1_fwd - np.pi if theta1_fwd > 0 else theta1_fwd + np.pi
+        theta1list = [theta1_fwd, theta1_bwd]
+
+        s = w_z - self.l1  # FIX: move s here — it doesn't depend on t1
+
         possible_joint_values = []
         for i in range(2):
+            t1 = theta1list[i]
+
+            # FIX 1: signed r — project wrist onto the t1 direction (can be negative)
+            r = w_x * math.cos(t1) + w_y * math.sin(t1)
+            L = math.sqrt(r**2 + s**2)
+
+            # FIX 2: cos_t3 sign is flipped for this DH convention
+            # L² = l2²+l3²+2·l2·l3·cos(t3), so cos_t3 = (L²-l2²-l3²)/(2·l2·l3)
+            cos_theta3 = (L**2 - self.l2**2 - self.l3**2) / (2 * self.l2 * self.l3)
+            cos_theta3 = np.clip(cos_theta3, -1.0, 1.0)
+            t3_base = math.acos(cos_theta3)
+            theta3list = [t3_base, -t3_base]
+
             for j in range(2):
-                # c23 = math.cos(theta2list[j])*math.cos(theta3list[j]) - math.sin(theta2list[j])*math.sin(theta3list[j])
-                # s23 = math.sin(theta2list[j])*math.cos(theta3list[j]) + math.cos(theta2list[j])*math.sin(theta3list[j])
-                # R0_3 = np.array([[math.cos(theta1list[i])*math.cos(s23), math.cos(theta1list[i])*math.cos(c23), math.sin(theta1list[i])],
-                #                 [math.sin(theta1list[i])*math.sin(s23), math.sin(theta1list[i])*math.sin(s23), -math.cos(theta1list[i])],
-                #                 [math.cos(c23), -math.sin(s23), 0]])
-                # R3_5 = R0_3.T @ H5
-                # R5_3 = R3_5.T
-                dh1 = ut.dh_to_matrix([theta1list[i], self.l1, 0, np.pi/2])
-                dh2 = ut.dh_to_matrix([theta2list[j]+np.pi/2, 0, self.l2, 0])
-                dh3 = ut.dh_to_matrix([-theta3list[j], 0, self.l3, 0])
-                
-                t03 = dh1@dh2@dh3
-                r03 = t03[:3,:3]
-                r35 = np.transpose(r03)@H5
-    
-                theta4 = math.atan2(r35[1,2], r35[0,2])
-                theta5 = math.atan2(r35[2, 0], r35[2,1])
-                possible_joint_values.append([theta1list[i], theta2list[j], theta3list[j], theta4, theta5])
-        
-        last_error = 1000
-        best_joints_index = 0
-        last_best_joints_index = 0
+                t3 = theta3list[j]
+
+                # FIX 3: atan2(r, s) not atan2(s, r), and + not - before the correction term
+                t2 = math.atan2(r, s) + math.atan2(
+                    self.l3 * math.sin(t3),
+                    self.l2 + self.l3 * math.cos(t3)
+                )
+
+                dh1 = ut.dh_to_matrix([t1,           self.l1, 0,       -np.pi/2])
+                dh2 = ut.dh_to_matrix([t2 - np.pi/2, 0,       self.l2,  np.pi  ])
+                dh3 = ut.dh_to_matrix([t3,            0,       self.l3,  np.pi  ])
+                T03 = dh1 @ dh2 @ dh3
+
+                M = np.linalg.inv(T03) @ T_ee
+                z_M = M[:3, 3] / d5
+                t4 = math.atan2(z_M[1], z_M[0])
+                DH4 = ut.dh_to_matrix([t4 + np.pi/2, 0, 0, np.pi/2])
+                DH5 = np.linalg.inv(DH4) @ M
+                t5 = math.atan2(DH5[1, 0], DH5[0, 0])
+
+                possible_joint_values.append([t1, t2, t3, t4, t5])
+
         print("new loop")
-        for i in range(len(possible_joint_values)):
-            [ee_guess, _] = self.calc_forward_kinematics(possible_joint_values[i])
-            print(f"joint vals: {possible_joint_values[i]}")
-            error = abs(ee_guess.x - ee.x) + abs(ee_guess.y - ee.y) + abs(ee_guess.z - ee.z)
+        error_list = []
+        for jv in possible_joint_values:
+            ee_guess, _ = self.calc_forward_kinematics(jv)
+            print(f"joint vals: {jv}")
+            error = (abs(ee_guess.x - ee.x) +
+                    abs(ee_guess.y - ee.y) +
+                    abs(ee_guess.z - ee.z))
             print(f"error: {error}")
-            if error < last_error:
-                last_best_joints_index = best_joints_index
-                best_joints_index = i
-            last_error = error
-        print(init_joint_values)
-        if soln == 0:      
-            return possible_joint_values[best_joints_index]
-        return possible_joint_values[last_best_joints_index]
+            error_list.append(error)
+
+        print(error_list)
+        sorted_indices = np.argsort(error_list)
+        return possible_joint_values[sorted_indices[0] if soln == 0 else sorted_indices[1]]
         
 
     
     def calc_numerical_ik(self,ee,init_joint_values,tol: float = 0.002,ilimit: int = 200):
         error = [100, 100, 100]
-    
+        joint_values = init_joint_values.copy()
         while np.linalg.norm(error) > tol:
-            joint_values = np.array([np.random.uniform(low, high) for low, high in self.joint_limits])
             #print(f"joint vals: {joint_values}")
+            
             for _ in range(ilimit):
                 [ee_guess, _] = self.calc_forward_kinematics(joint_values)
                 error = np.array([
-                    ee_guess.x - ee.x,
-                    ee_guess.y - ee.y,
-                    ee_guess.z - ee.z,
+                    abs(ee_guess.x - ee.x),
+                    abs(ee_guess.y - ee.y),
+                    abs(ee_guess.z - ee.z),
                 ])
+                
+                #damped inv jacobian
+                J = self.jacobian(joint_values)
+                joint_values += np.linalg.pinv(J) @ error
+                #J = self.damped_inverse_jacobian(joint_values)
+                #joint_values = joint_values + (J @ error)
 
                 #if converged
-                if np.linalg.norm(error) <= tol:
+                if abs(np.linalg.norm(error)) < tol:
                     print(f"error: {error}")
+                    print(f"end effector pose {ee_guess.x}, {ee_guess.y}, {ee_guess.z}")
                     return joint_values
+                
+            joint_values = np.array([np.random.uniform(low, high) for low, high in self.joint_limits])
+        
 
-                #damped inv jacobian
-                J = self.damped_inverse_jacobian(joint_values)
-
-                joint_values = joint_values + (J @ error)
+                
+        
+            
 
 
 
