@@ -171,40 +171,33 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         w_y = ee.y - d5 * ee_rotation[1, 2]
         w_z = ee.z - d5 * ee_rotation[2, 2]
 
-        theta1_fwd = math.atan2(w_y, w_x)
-        theta1_bwd = theta1_fwd - np.pi if theta1_fwd > 0 else theta1_fwd + np.pi
-        theta1list = [theta1_fwd, theta1_bwd]
+        theta1f = math.atan2(w_y, w_x)
+        theta1b = theta1f - np.pi if theta1f > 0 else theta1f + np.pi
+        theta1list = [theta1f, theta1b]
 
-        s = w_z - self.l1  # FIX: move s here — it doesn't depend on t1
+        s = w_z - self.l1
 
         possible_joint_values = []
         for i in range(2):
-            t1 = theta1list[i]
+            theta1 = theta1list[i]
 
-            # FIX 1: signed r — project wrist onto the t1 direction (can be negative)
-            r = w_x * math.cos(t1) + w_y * math.sin(t1)
+            r = w_x * math.cos(theta1) + w_y * math.sin(theta1)
             L = math.sqrt(r**2 + s**2)
 
-            # FIX 2: cos_t3 sign is flipped for this DH convention
-            # L² = l2²+l3²+2·l2·l3·cos(t3), so cos_t3 = (L²-l2²-l3²)/(2·l2·l3)
             cos_theta3 = (L**2 - self.l2**2 - self.l3**2) / (2 * self.l2 * self.l3)
             cos_theta3 = np.clip(cos_theta3, -1.0, 1.0)
-            t3_base = math.acos(cos_theta3)
-            theta3list = [t3_base, -t3_base]
+            theta3_base = math.acos(cos_theta3)
+            theta3list = [theta3_base, -theta3_base]
 
             for j in range(2):
-                t3 = theta3list[j]
+                theta3 = theta3list[j]
 
-                # FIX 3: atan2(r, s) not atan2(s, r), and + not - before the correction term
-                t2 = math.atan2(r, s) + math.atan2(
-                    self.l3 * math.sin(t3),
-                    self.l2 + self.l3 * math.cos(t3)
-                )
+                theta2 = math.atan2(r, s) + math.atan2(self.l3 * math.sin(theta3), self.l2 + self.l3 * math.cos(theta3))
 
-                dh1 = ut.dh_to_matrix([t1,           self.l1, 0,       -np.pi/2])
-                dh2 = ut.dh_to_matrix([t2 - np.pi/2, 0,       self.l2,  np.pi  ])
-                dh3 = ut.dh_to_matrix([t3,            0,       self.l3,  np.pi  ])
-                T03 = dh1 @ dh2 @ dh3
+                H0_1 = ut.dh_to_matrix([theta1, self.l1, 0, -np.pi/2])
+                H1_2 = ut.dh_to_matrix([theta2 - np.pi/2, 0, self.l2, np.pi])
+                H2_3 = ut.dh_to_matrix([theta3, 0, self.l3, np.pi])
+                T03 = H0_1 @ H1_2 @ H2_3
 
                 M = np.linalg.inv(T03) @ T_ee
                 z_M = M[:3, 3] / d5
@@ -213,7 +206,7 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
                 DH5 = np.linalg.inv(DH4) @ M
                 t5 = math.atan2(DH5[1, 0], DH5[0, 0])
 
-                possible_joint_values.append([t1, t2, t3, t4, t5])
+                possible_joint_values.append([theta1, theta2, theta3, t4, t5])
 
         print("new loop")
         error_list = []
@@ -229,7 +222,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         print(error_list)
         sorted_indices = np.argsort(error_list)
         return possible_joint_values[sorted_indices[0] if soln == 0 else sorted_indices[1]]
-        
 
     
     def calc_numerical_ik(self,ee,init_joint_values,tol: float = 0.002,ilimit: int = 200):
