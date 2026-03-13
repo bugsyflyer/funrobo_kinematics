@@ -226,7 +226,6 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
     #     return possible_joint_values[sorted_indices[0] if soln == 0 else sorted_indices[1]]
     
     def calc_inverse_kinematics(self, ee, joint_values: list, radians=True, soln = 0):
-        
         # position and rotation of end effector
         p_ee = np.array([ee.x, ee.y, ee.z])
         r_ee = ut.euler_to_rotm([ee.rotx, ee.roty, ee.rotz])
@@ -325,27 +324,31 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
     def calc_numerical_ik(self,ee,init_joint_values,tol: float = 0.002,ilimit: int = 200):
         error = [100, 100, 100]
         joint_values = init_joint_values.copy()
-        while np.linalg.norm(error) > tol:
+        limits = np.array(self.joint_limits)
+        #print(abs(max(error, key=abs)))
+        for temp1 in range(25):
             #print(f"joint vals: {joint_values}")
-            
-            for _ in range(ilimit):
+            for temp2 in range(200):
+                #print(temp2)
+                joint_values = np.array(joint_values)
+                #print(joint_values)
                 [ee_guess, _] = self.calc_forward_kinematics(joint_values)
                 error = np.array([
-                    abs(ee_guess.x - ee.x),
-                    abs(ee_guess.y - ee.y),
-                    abs(ee_guess.z - ee.z),
+                    ee_guess.x - ee.x,
+                    ee_guess.y - ee.y,
+                    ee_guess.z - ee.z,
                 ])
                 
                 #damped inv jacobian
                 J = self.jacobian(joint_values)
                 joint_values += np.linalg.pinv(J) @ error
-                #J = self.damped_inverse_jacobian(joint_values)
-                #joint_values = joint_values + (J @ error)
-
+                for i in range(joint_values.size):
+                    np.clip(joint_values[i], limits[i][0], limits[i][1])
                 #if converged
-                if abs(np.linalg.norm(error)) < tol:
-                    print(f"error: {error}")
-                    print(f"end effector pose {ee_guess.x}, {ee_guess.y}, {ee_guess.z}")
+                #print(abs(max(error, key = abs)))
+                if abs(max(error, key = abs)) < tol:
+                    print(abs(max(error, key = abs)))
+                    print("converged")
                     return joint_values
                 
             joint_values = np.array([np.random.uniform(low, high) for low, high in self.joint_limits])
