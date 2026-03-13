@@ -62,52 +62,149 @@ class Kinova(KinovaRobotTemplate):
 
         return ee, Hlist
     
-    def calc_inverse_kinematics(self, ee, init_joint_values, soln=0):
-        #currently does not account for multiple solns
-        #actually change the calcs for different thetas
-        d5 = self.l4 + self.l5
-        H0_6 = ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz))
-        w_x = ee.x - d5*H0_6[0,3]
-        w_y = ee.y - d5*H0_6[1,3]
-        w_z = ee.z - d5*H0_6[2,3]
+    # def calc_inverse_kinematics(self, ee, init_joint_values, soln=0):
+    #     #currently does not account for multiple solns
+    #     #actually change the calcs for different thetas
+    #     d5 = self.l4 + self.l5
+    #     H0_6 = ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz))
+    #     w_x = ee.x - d5*H0_6[0,3]
+    #     w_y = ee.y - d5*H0_6[1,3]
+    #     w_z = ee.z - d5*H0_6[2,3]
         
-        theta1a = math.atan2(ee.x, ee.y)
-        theta1b = math.atan2(ee.x, ee.y)
+    #     theta1a = math.atan2(ee.x, ee.y)
+    #     theta1b = math.atan2(ee.x, ee.y)
         
-        r = math.sqrt(w_x**2 + w_y**2)
-        s = w_z - self.l1
-        theta3a = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
-        theta3b = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
-        theta2a = math.arcsin(((self.l3 + self.l4*math.cos(theta3))*s - self.l4*math.sin(theta3)*r)/(r**2 + s**2))
-        theta2b= math.arccos(((self.l3 + self.l4*math.cos(theta3))*r - self.l4*math.sin(theta3)*s)/(r**2 + s**2))
+    #     r = math.sqrt(w_x**2 + w_y**2)
+    #     s = w_z - self.l1
+    #     theta3a = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
+    #     theta3b = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
+    #     theta2a = math.arcsin(((self.l3 + self.l4*math.cos(theta3))*s - self.l4*math.sin(theta3)*r)/(r**2 + s**2))
+    #     theta2b= math.arccos(((self.l3 + self.l4*math.cos(theta3))*r - self.l4*math.sin(theta3)*s)/(r**2 + s**2))
         
-        if soln == 0:
-            theta1 = theta1a
-            theta2 = theta2a
-            theta3 = theta3a
+    #     if soln == 0:
+    #         theta1 = theta1a
+    #         theta2 = theta2a
+    #         theta3 = theta3a
 
-        elif soln == 1:
-            theta1 = theta1a
-            theta2 = theta2b
-            theta3 = theta3b
+    #     elif soln == 1:
+    #         theta1 = theta1a
+    #         theta2 = theta2b
+    #         theta3 = theta3b
 
-        elif soln == 2:
-            theta1 = theta1b
-            theta2 = theta2a
-            theta3 = theta3a
+    #     elif soln == 2:
+    #         theta1 = theta1b
+    #         theta2 = theta2a
+    #         theta3 = theta3a
 
-        elif soln == 3:
-            theta1 = theta1b
-            theta2 = theta2b
-            theta3 = theta3b
+    #     elif soln == 3:
+    #         theta1 = theta1b
+    #         theta2 = theta2b
+    #         theta3 = theta3b
         
-        R0_1 = self.Rz(theta1)@self.Ry(theta1)@self.Rx(theta1)
-        R1_2 = self.Rz(theta2)@self.Ry(theta2)@self.Rx(theta2)
-        R2_3 = self.Rz(theta3)@self.Ry(theta3)@self.Rx(theta3)
-        R0_3 = R0_1@R1_2@R2_3
-        R3_6 = R0_3.T @ R0_3
+    #     R0_1 = self.Rz(theta1)@self.Ry(theta1)@self.Rx(theta1)
+    #     R1_2 = self.Rz(theta2)@self.Ry(theta2)@self.Rx(theta2)
+    #     R2_3 = self.Rz(theta3)@self.Ry(theta3)@self.Rx(theta3)
+    #     R0_3 = R0_1@R1_2@R2_3
+    #     R3_6 = R0_3.T @ R0_3
     
-        theta5 = math.atan2(math.atan2(1-(math.sin(theta1)*H0_6[0])))
+    #     theta5 = math.atan2(math.atan2(1-(math.sin(theta1)*H0_6[0])))
+    
+    def calc_inverse_kinematics(self, ee, joint_values: list, radians=True, soln = 0):
+           
+            # position and rotation of end effector
+            p_ee = np.array([ee.x, ee.y, ee.z])
+            r_ee = ut.euler_to_rotm([ee.rotx, ee.roty, ee.rotz])
+            #wrist center position
+            piv_wrist = p_ee - (self.l6 + self.l7) * (r_ee @ np.array([0, 0, 1]))
+            wrist_x, wrist_y, wrist_z = piv_wrist[0], piv_wrist[1], piv_wrist[2]
+            # calculate theta1
+            solutions = []
+            theta_1_opts = [atan2(wrist_y, wrist_x), atan2(-wrist_y, -wrist_x)]
+            for theta1 in theta_1_opts:
+                # triangle
+                r = wrist_x * cos(theta1) + wrist_y * sin(theta1)
+                s = (self.l1 + self.l2) - wrist_z
+                L_sq = r**2 + s**2
+               
+                l2 = self.l2
+                l3 = self.l3
+               
+                # Law of Cosines
+                numerator = l2**2 + l3**2 - L_sq
+                denominator = 2 * l2 * l3
+               
+                # ensure target is reachable
+                if abs(numerator) > abs(denominator):
+                    continue
+                   
+                cos_beta = numerator / denominator
+                beta = np.arccos(cos_beta)
+           
+                # theta 3 solutions
+                for theta_3_candidate in [np.pi - beta, -(np.pi - beta)]:
+                    theta3 = theta_3_candidate + (np.pi / 2)
+                   
+                    # angular offset
+                    alpha = np.arctan2(l3 * np.sin(theta3), l2 + l3 * np.cos(theta3))
+
+                    # angular trajectory
+                    gamma = np.arctan2(s, r)
+
+                    # theta 2
+                    theta2 = (np.pi / 2) + (gamma - alpha)
+                   
+                    # solve for wrist angles
+                    q_list = [theta1, theta2, theta3, 0, 0]
+                   
+                    H_cumulative, _ = self.compute_transformation_matrices(q_list)
+                    R3 = H_cumulative[3][:3, :3]
+                   
+                    R36 = R3.T @ r_ee
+                   
+                    theta6 = atan2(R36[2, 1], -R36[2, 0])
+                    theta5 = atan2(sqrt(R36[2,0]**2 + R36[2,1]**2), -R36[2,2])
+                    theta4 = atan2(R36[1, 2], R36[0, 2])
+                   
+                    candidate_q = [theta1, theta2, theta3, theta4, theta5, theta6]
+                    candidate_q = [self.normalized_angle(q) for q in candidate_q]
+                   
+                    # set limits
+                    if ut.check_joint_limits(candidate_q, self.joint_limits):
+                        solutions.append(candidate_q)
+            def calc_error(q):
+                ee_curr, _ = self.calc_forward_kinematics(q)
+                return np.linalg.norm(np.array([ee.x - ee_curr.x, ee.y - ee_curr.y, ee.z - ee_curr.z]))
+           
+            solutions.sort(key=calc_error)
+            if not solutions:
+                return np.zeros(5)
+            if soln < len(solutions):
+                return solutions[soln]
+            return solutions[0]
+        
+    def compute_transformation_matrices(self, joint_values):
+    
+        theta = joint_values
+        DH = np.array([
+            [theta[0], self.l1, 0, -np.pi/2],
+            [theta[1]-(np.pi/2), 0, self.l2, np.pi],
+            [theta[2], 0, self.l3, np.pi],
+            [theta[3]+(np.pi/2), 0, 0, np.pi/2],
+            [theta[4], self.l4+self.l5, 0, 0]
+        ])
+
+        # compute transformation matrices for each joint
+        Hlist = [ut.dh_to_matrix(dh) for dh in DH] 
+
+        # compute cumulative transformations
+        H_cumulative = [np.eye(4)]
+        for H in Hlist:
+            H_cumulative.append(H_cumulative[-1] @ H)
+            
+        return H_cumulative, Hlist
+    
+    def normalized_angle(self, angle):
+        return(angle + np.pi) % (2 * np.pi) - np.pi  
         
     
         
